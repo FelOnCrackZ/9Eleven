@@ -131,8 +131,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar'])) {
             }
         } catch (PDOException $e) {
             $error = ($e->getCode() === '23000')
-                ? "No se puede eliminar \"$nombreEliminar\": el producto tiene ventas registradas."
+                ? 'El producto tiene ventas registradas y no puede eliminarse.'
                 : 'Error al eliminar el producto.';
+        }
+    }
+    $vista = 'lista';
+}
+
+// ----------------------------------------------------
+// ACCIÓN: Activar / desactivar producto (borrado lógico)
+// ----------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_estado'])) {
+    $idEstado    = (int)($_POST['id_estado'] ?? 0);
+    $nuevoEstado = ((int)($_POST['nuevo_estado'] ?? 0) === 1) ? 1 : 0;
+
+    if (!csrfValido()) {
+        $error = 'Token de seguridad inválido. Recarga la página e inténtalo de nuevo.';
+    } elseif ($idEstado <= 0) {
+        $error = 'Producto no válido.';
+    } else {
+        try {
+            $stmt = $pdo->prepare("UPDATE productos SET activo = ? WHERE ID_Producto = ?");
+            $stmt->execute([$nuevoEstado, $idEstado]);
+
+            if ($stmt->rowCount() > 0) {
+                $exito = $nuevoEstado ? 'Producto activado correctamente.' : 'Producto desactivado correctamente.';
+            } else {
+                $error = 'No se encontró el producto o ya tenía ese estado.';
+            }
+        } catch (PDOException $e) {
+            $error = 'Error al cambiar el estado del producto.';
         }
     }
     $vista = 'lista';
@@ -355,7 +383,7 @@ $productos = $stmt->fetchAll();
 
         <?php endif; ?>
 
-        <table>
+                <table>
             <thead>
                 <tr>
                     <th>Código</th>
@@ -364,17 +392,19 @@ $productos = $stmt->fetchAll();
                     <th>Precio</th>
                     <th>Stock</th>
                     <th>Estado</th>
+                    <th>Activo</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($productos)): ?>
-                    <tr><td colspan="7" class="sin-datos">No se encontraron productos.</td></tr>
+                    <tr><td colspan="8" class="sin-datos">No se encontraron productos.</td></tr>
                 <?php else: ?>
                     <?php foreach ($productos as $p):
                         $bajo = $p['stockActual'] <= $p['stockMinimo'];
+                        $activo = (int)($p['activo'] ?? 1) === 1;
                     ?>
-                        <tr>
+                        <tr style="<?= $activo ? '' : 'opacity:.55;' ?>">
                             <td><?= h($p['codigoProducto']) ?></td>
                             <td><?= h($p['nombreProducto']) ?></td>
                             <td><?= h($p['nombreCategoria'] ?? '—') ?></td>
@@ -385,12 +415,21 @@ $productos = $stmt->fetchAll();
                                     <?= $bajo ? 'Bajo' : 'OK' ?>
                                 </span>
                             </td>
+                            <td><?= $activo ? 'Sí' : 'No' ?></td>
                             <td>
                                 <a style="text-decoration:none;" href="productos.php?vista=editar&codigo=<?= urlencode($p['codigoProducto']) ?>" title="Editar producto">Editar</a>
-                                <form method="POST" action="productos.php" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar este registro?');">
+
+                                <form method="POST" action="productos.php" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar este producto?');">
                                     <?= csrfCampo() ?>
                                     <input type="hidden" name="id_eliminar" value="<?= (int)$p['ID_Producto'] ?>">
                                     <button type="submit" name="accion_eliminar" class="btn btn-rojo">Eliminar</button>
+                                </form>
+
+                                <form method="POST" action="productos.php" style="display:inline;" onsubmit="return confirm('<?= $activo ? '¿Desactivar este producto?' : '¿Activar este producto?' ?>');">
+                                    <?= csrfCampo() ?>
+                                    <input type="hidden" name="id_estado" value="<?= (int)$p['ID_Producto'] ?>">
+                                    <input type="hidden" name="nuevo_estado" value="<?= $activo ? 0 : 1 ?>">
+                                    <button type="submit" name="accion_estado" class="btn"><?= $activo ? 'Desactivar' : 'Activar' ?></button>
                                 </form>
                             </td>
                         </tr>
